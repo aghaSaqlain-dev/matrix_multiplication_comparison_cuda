@@ -1,71 +1,54 @@
 #include <iostream>
-#include <vector>
 #include <omp.h>
-#include <chrono>
+#include <cstdlib>
+#include <ctime>
 
-int main()
-{
-    const int M = 1000; // Number of rows in Matrix A and result matrix
-    const int K = 1500; // Number of columns in Matrix A and rows in Matrix B
-    const int N = 3000; // Number of columns in Matrix B and result matrix
+#define N 1024  // Adjust according to your system's memory
 
-    // Initialize matrices
-    std::vector<std::vector<double>> A(M, std::vector<double>(K, 0.0));
-    std::vector<std::vector<double>> B(K, std::vector<double>(N, 0.0));
-    std::vector<std::vector<double>> C(M, std::vector<double>(N, 0.0));
+int main() {
+    // Allocate memory for matrices
+    float* A = new float[N * N];
+    float* B = new float[N * N];
+    float* C = new float[N * N];
 
-    // Fill matrices with some values
-    for (int i = 0; i < M; i++)
-    {
-        for (int j = 0; j < K; j++)
-        {
-            A[i][j] = i + j;
-        }
+    // Initialize matrices with random values
+    srand(time(NULL));
+    for (int i = 0; i < N * N; ++i) {
+        A[i] = static_cast<float>(rand()) / RAND_MAX;
+        B[i] = static_cast<float>(rand()) / RAND_MAX;
+        C[i] = 0.0f;
     }
 
-    for (int i = 0; i < K; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
-            B[i][j] = i * j;
-        }
-    }
+    // Measure execution time
+    double start = omp_get_wtime();
 
-    // Start measuring time
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-// Matrix multiplication using OpenMP
-#pragma omp parallel for
-    for (int i = 0; i < M; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
-            C[i][j] = 0.0;
-            for (int k = 0; k < K; k++)
-            {
-                C[i][j] += A[i][k] * B[k][j];
+    // Parallel matrix multiplication using OpenMP
+    #pragma omp parallel for collapse(2)
+    for (int row = 0; row < N; ++row) {
+        for (int col = 0; col < N; ++col) {
+            float sum = 0.0f;
+            for (int k = 0; k < N; ++k) {
+                sum += A[row * N + k] * B[k * N + col];
             }
+            C[row * N + col] = sum;
         }
     }
 
-    // End measuring time
-    auto end_time = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end_time - start_time;
+    double end = omp_get_wtime();
+    std::cout << "Execution time with OpenMP: " << (end - start) * 1000 << " ms\n";
 
-    // Print execution time
-    std::cout << "Matrix multiplication completed in " << elapsed.count()
-              << " seconds" << std::endl;
-
-    // Verify result (optional) - print a small portion of result matrix
-    std::cout << "Sample of result matrix (first 3x3 elements):" << std::endl;
-    for (int i = 0; i < std::min(3, M); i++)
-    {
-        for (int j = 0; j < std::min(3, N); j++)
-        {
-            std::cout << C[i][j] << " ";
-        }
-        std::cout << std::endl;
+    // Output partial result for verification
+    std::cout << "Top-left 10x10 block of result matrix C:\n";
+    for (int i = 0; i < 10; ++i) {
+        for (int j = 0; j < 10; ++j)
+            std::cout << C[i * N + j] << " ";
+        std::cout << "\n";
     }
+
+    // Free memory
+    delete[] A;
+    delete[] B;
+    delete[] C;
 
     return 0;
 }

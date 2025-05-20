@@ -1,107 +1,78 @@
 #include <iostream>
-#include <chrono>
 #include <cuda_runtime.h>
 
-// Kernel function for matrix multiplication
-__global__ void matrixMultKernel(const double *A, const double *B, double *C, int M, int K, int N)
-{
-    // Calculate global row and column for this thread
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+#define N 16000
 
-    // Check if within matrix bounds
-    if (row < M && col < N)
-    {
-        double sum = 0.0;
-        for (int k = 0; k < K; k++)
-        {
-            sum += A[row * K + k] * B[k * N + col];
-        }
-        C[row * N + col] = sum;
+
+__global__ void matrixMulKernel(float* A, float* B, float* C, int n) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;  // Row index
+    int col = blockIdx.x * blockDim.x + threadIdx.x;  // Column index
+
+    if (row < n && col < n) {
+        float sum = 0.0f;
+        for (int k = 0; k < n; ++k)
+            sum += A[row * n + k] * B[k * n + col];
+        C[row * n + col] = sum;
     }
 }
 
-// Function to check for CUDA errors
-void checkCudaError(cudaError_t error, const char *msg)
-{
-    if (error != cudaSuccess)
-    {
-        std::cerr << "CUDA Error: " << msg << " - " << cudaGetErrorString(error) << std::endl;
-        exit(EXIT_FAILURE);
-    }
-}
 
-int main()
-{
-    const int M = 100; // Number of rows in Matrix A and result matrix
-    const int K = 150; // Number of columns in Matrix A and rows in Matrix B
-    const int N = 300; // Number of columns in Matrix B and result matrix
+int main() {
+    size_t bytes = N * N * sizeof(float);
 
     // Allocate host memory
-    double *h_A = new double[M * K];
-    double *h_B = new double[K * N];
-    double *h_C = new double[M * N];
+    float *h_A = new float[N * N];
+    float *h_B = new float[N * N];
+    float *h_C = new float[N * N];
 
-    // Initialize matrices with values
-    for (int i = 0; i < M; i++)
-    {
-        for (int j = 0; j < K; j++)
-        {
-            h_A[i * K + j] = i + j;
-        }
-    }
-
-    for (int i = 0; i < K; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
-            h_B[i * N + j] = i * j;
-        }
+    // Initialize input matrices
+    // Seed the random number generator
+    srand(time(NULL));
+    for (int i = 0; i < N * N; ++i) {
+        h_A[i] = static_cast<float>(rand()) / RAND_MAX;
+        h_B[i] = static_cast<float>(rand()) / RAND_MAX;
     }
 
     // Allocate device memory
-    double *d_A, *d_B, *d_C;
-    checkCudaError(cudaMalloc((void **)&d_A, M * K * sizeof(double)), "cudaMalloc A");
-    checkCudaError(cudaMalloc((void **)&d_B, K * N * sizeof(double)), "cudaMalloc B");
-    checkCudaError(cudaMalloc((void **)&d_C, M * N * sizeof(double)), "cudaMalloc C");
+    float *d_A, *d_B, *d_C;
+    cudaMalloc(&d_A, bytes);
+    cudaMalloc(&d_B, bytes);
+    cudaMalloc(&d_C, bytes);
 
-    // Transfer data from host to device
-    checkCudaError(cudaMemcpy(d_A, h_A, M * K * sizeof(double), cudaMemcpyHostToDevice), "cudaMemcpy A to device");
-    checkCudaError(cudaMemcpy(d_B, h_B, K * N * sizeof(double), cudaMemcpyHostToDevice), "cudaMemcpy B to device");
+    // Copy data from host to device
+    cudaMemcpy(d_A, h_A, bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, bytes, cudaMemcpyHostToDevice);
 
-    // Define block and grid dimensions
-    dim3 blockDim(16, 16); // 16x16 threads per block
-    dim3 gridDim((N + blockDim.x - 1) / blockDim.x, (M + blockDim.y - 1) / blockDim.y);
+    // Kernel launch parameters
+    dim3 threadsPerBlock(16, 16);
+    dim3 blocksPerGrid((N + 15) / 16, (N + 15) / 16);
 
-    // Start timing
-    auto start_time = std::chrono::high_resolution_clock::now();
+    // Launch kernel and note execution time
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
-    // Launch kernel
-    matrixMultKernel<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    cudaEventRecord(start);
+    matrixMulKernel<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, N);
+    cudaEventRecord(stop);
 
-    // Wait for GPU to finish
-    checkCudaError(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    std::cout << "Kernel execution time: " << milliseconds << " ms\n";
 
-    // End timing
-    auto end_time = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end_time - start_time;
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
 
     // Copy result back to host
-    checkCudaError(cudaMemcpy(h_C, d_C, M * N * sizeof(double), cudaMemcpyDeviceToHost), "cudaMemcpy C to host");
+    cudaMemcpy(h_C, d_C, bytes, cudaMemcpyDeviceToHost);
 
-    // Print execution time
-    std::cout << "CUDA matrix multiplication completed in " << elapsed.count()
-              << " seconds" << std::endl;
-
-    // Verify result (optional) - print a small portion of result matrix
-    std::cout << "Sample of result matrix (first 3x3 elements):" << std::endl;
-    for (int i = 0; i < std::min(3, M); i++)
-    {
-        for (int j = 0; j < std::min(3, N); j++)
-        {
+    // Output result
+    std::cout << "Result matrix C:\n";
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j)
             std::cout << h_C[i * N + j] << " ";
-        }
-        std::cout << std::endl;
+        std::cout << "\n";
     }
 
     // Free device memory
