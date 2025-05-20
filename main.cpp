@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <ctime>
 
-#define N 1024  // Adjust according to your system's memory
+#define N 2048  // Adjust according to your system's memory
 
 int main() {
     // Allocate memory for matrices
@@ -37,13 +37,6 @@ int main() {
     double end = omp_get_wtime();
     std::cout << "Execution time with OpenMP: " << (end - start) * 1000 << " ms\n";
 
-    // Output partial result for verification
-    std::cout << "Top-left 10x10 block of result matrix C:\n";
-    for (int i = 0; i < 10; ++i) {
-        for (int j = 0; j < 10; ++j)
-            std::cout << C[i * N + j] << " ";
-        std::cout << "\n";
-    }
 
     // Free memory
     delete[] A;

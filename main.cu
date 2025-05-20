@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cuda_runtime.h>
 
-#define N 16000
+#define N 2048
 
 
 __global__ void matrixMulKernel(float* A, float* B, float* C, int n) {
@@ -67,13 +67,7 @@ int main() {
     // Copy result back to host
     cudaMemcpy(h_C, d_C, bytes, cudaMemcpyDeviceToHost);
 
-    // Output result
-    std::cout << "Result matrix C:\n";
-    for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j)
-            std::cout << h_C[i * N + j] << " ";
-        std::cout << "\n";
-    }
+
 
     // Free device memory
     cudaFree(d_A);
